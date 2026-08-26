@@ -20,6 +20,10 @@ defmodule Ingestion.Incidents.EscalatorTest do
     insert_incident!(%{severity: "critical"})
   end
 
+  defp advisory_incident do
+    insert_incident!(%{severity: "advisory", trigger_status: "trending"})
+  end
+
   describe "the severity window" do
     test "does not escalate before the window has elapsed" do
       incident = critical_incident()
@@ -56,6 +60,61 @@ defmodule Ingestion.Incidents.EscalatorTest do
       # An hour in, medium is due too.
       assert [escalated_medium] = Escalator.run_once(seconds_from_now(60 * 60))
       assert escalated_medium.id == medium.id
+    end
+  end
+
+  describe "advisory incidents use their own, much longer window" do
+    test "an advisory does not escalate on the critical (15 min) window" do
+      advisory_incident()
+
+      assert Escalator.run_once(seconds_from_now(15 * 60)) == []
+      refute_receive {:notification_delivered, _channel, _alert, _rendered}, 200
+    end
+
+    test "an advisory does not escalate even at the longest breach-tier window (low, 2h)" do
+      advisory_incident()
+
+      # low severity's window (2h) is still short of advisory's (4h+).
+      low_window = Incidents.escalation_window_seconds("low")
+      advisory_window = Incidents.escalation_window_seconds("advisory")
+      assert advisory_window > low_window
+
+      assert Escalator.run_once(seconds_from_now(low_window)) == []
+    end
+
+    test "an advisory escalates once its own window has elapsed, at least 4 hours" do
+      incident = advisory_incident()
+      window = Incidents.escalation_window_seconds("advisory")
+
+      assert window >= 4 * 60 * 60
+
+      assert [escalated] = Escalator.run_once(seconds_from_now(window))
+      assert escalated.id == incident.id
+      assert %DateTime{} = escalated.escalated_at
+
+      assert_receive {:notification_delivered, :outlook, alert, text}, 1_000
+      assert alert.severity == "advisory"
+      assert text =~ "ESCALATED"
+    end
+
+    test "a critical and an advisory incident escalate independently, on their own clocks" do
+      critical = critical_incident()
+      advisory = advisory_incident()
+
+      # 15 minutes in: only the critical one is due.
+      assert [escalated] = Escalator.run_once(seconds_from_now(15 * 60))
+      assert escalated.id == critical.id
+      assert Incidents.get_incident!(advisory.id).escalated_at == nil
+
+      # Once the advisory's own window has passed, it escalates too —
+      # without touching the critical incident (already escalated, and not
+      # re-escalated).
+      assert [escalated_advisory] =
+               Escalator.run_once(
+                 seconds_from_now(Incidents.escalation_window_seconds("advisory"))
+               )
+
+      assert escalated_advisory.id == advisory.id
     end
   end
 

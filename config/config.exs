@@ -31,13 +31,19 @@ config :ingestion, :escalation,
     "high" => 30 * 60,
     # "Warning"-class severities -> 60 minutes
     "medium" => 60 * 60,
-    "low" => 120 * 60
+    "low" => 120 * 60,
+    # Advisory (:trending) incidents are a developing-trend heads-up, not a
+    # confirmed breach — deliberately far outside the breach-tier windows
+    # above, so a trend nobody has looked at yet still eventually surfaces
+    # rather than escalating on a breach-severity clock.
+    "advisory" => 4 * 60 * 60
   },
   contacts: %{
     "critical" => "FSQ lead + warehouse manager",
     "high" => "FSQ lead",
     "medium" => "FSQ duty officer",
-    "low" => "FSQ duty officer"
+    "low" => "FSQ duty officer",
+    "advisory" => "FSQ duty officer"
   },
   default_window_seconds: 60 * 60,
   default_contact: "FSQ duty officer",

@@ -5,6 +5,7 @@ defmodule Ingestion.Incidents.MonitorTest do
 
   alias Ingestion.Incidents
   alias Ingestion.Incidents.Monitor
+  alias Ingestion.Notifier
 
   setup do
     zone = insert_zone!(%{commodity: "frozen_food"})
@@ -94,9 +95,14 @@ defmodule Ingestion.Incidents.MonitorTest do
     end
   end
 
-  describe "transitions that must NOT create an incident" do
-    test ":trending is a precursor warning, not an incident", ctx do
-      assert :ignored =
+  describe "a transition into :trending from :normal (advisory)" do
+    setup do
+      Notifier.Local.subscribe()
+      :ok
+    end
+
+    test "persists an advisory-severity incident, distinct from the rule's own severity", ctx do
+      assert {:ok, incident} =
                Monitor.handle_evaluation(
                  ctx.sensor.serial,
                  ctx.rule.id,
@@ -105,10 +111,105 @@ defmodule Ingestion.Incidents.MonitorTest do
                  :trending
                )
 
-      assert Incidents.list_open_incidents() == []
+      assert incident.sensor_id == ctx.sensor.id
+      assert incident.rule_id == ctx.rule.id
+      assert incident.status == "new"
+      assert incident.severity == "advisory"
+      assert incident.trigger_status == "trending"
+      assert %DateTime{} = incident.triggered_at
+
+      assert length(Incidents.list_open_incidents()) == 1
     end
 
-    test "returning to :normal from :trending creates nothing", ctx do
+    test "notifies exactly once via both channels, through the same Notifier pipeline", ctx do
+      assert {:ok, _incident} =
+               Monitor.handle_evaluation(
+                 ctx.sensor.serial,
+                 ctx.rule.id,
+                 "critical",
+                 :normal,
+                 :trending
+               )
+
+      assert_receive {:notification_delivered, :outlook, alert, _rendered}, 1_000
+      assert_receive {:notification_delivered, :teams, _alert, _rendered}, 1_000
+      refute_receive {:notification_delivered, _channel, _alert, _rendered}, 200
+
+      assert alert.severity == "advisory"
+    end
+
+    test "is idempotent — re-entering :trending while one is already open does not double-notify",
+         ctx do
+      assert {:ok, first} =
+               Monitor.handle_evaluation(
+                 ctx.sensor.serial,
+                 ctx.rule.id,
+                 "critical",
+                 :normal,
+                 :trending
+               )
+
+      assert_receive {:notification_delivered, :outlook, _alert, _rendered}, 1_000
+      assert_receive {:notification_delivered, :teams, _alert, _rendered}, 1_000
+
+      assert {:ok, :already_open} =
+               Monitor.handle_evaluation(
+                 ctx.sensor.serial,
+                 ctx.rule.id,
+                 "critical",
+                 :normal,
+                 :trending
+               )
+
+      refute_receive {:notification_delivered, _channel, _alert, _rendered}, 200
+      assert [only] = Incidents.list_open_incidents()
+      assert only.id == first.id
+    end
+
+    test "does not block, and is not blocked by, a subsequent full breach on the same sensor/rule",
+         ctx do
+      assert {:ok, advisory} =
+               Monitor.handle_evaluation(
+                 ctx.sensor.serial,
+                 ctx.rule.id,
+                 "critical",
+                 :normal,
+                 :trending
+               )
+
+      assert_receive {:notification_delivered, :outlook, _alert, _rendered}, 1_000
+      assert_receive {:notification_delivered, :teams, _alert, _rendered}, 1_000
+
+      assert {:ok, breach} =
+               Monitor.handle_evaluation(
+                 ctx.sensor.serial,
+                 ctx.rule.id,
+                 "critical",
+                 :trending,
+                 :breach
+               )
+
+      assert_receive {:notification_delivered, :outlook, breach_alert, _rendered}, 1_000
+      assert_receive {:notification_delivered, :teams, _alert, _rendered}, 1_000
+
+      refute breach.id == advisory.id
+      assert breach.severity == "critical"
+      assert breach.trigger_status == "breach"
+      assert breach_alert.severity == "critical"
+
+      open_ids = Incidents.list_open_incidents() |> Enum.map(& &1.id) |> Enum.sort()
+      assert open_ids == Enum.sort([advisory.id, breach.id])
+    end
+  end
+
+  describe "transitions that must NOT create an incident" do
+    setup do
+      Notifier.Local.subscribe()
+      :ok
+    end
+
+    test "returning to :normal from :trending (a false alarm) creates and notifies nothing",
+         ctx do
       assert :ignored =
                Monitor.handle_evaluation(
                  ctx.sensor.serial,
@@ -119,11 +220,45 @@ defmodule Ingestion.Incidents.MonitorTest do
                )
 
       assert Incidents.list_open_incidents() == []
+      refute_receive {:notification_delivered, _channel, _alert, _rendered}, 200
+    end
+
+    test "a false alarm does not re-notify even when the advisory it followed is still open",
+         ctx do
+      assert {:ok, advisory} =
+               Monitor.handle_evaluation(
+                 ctx.sensor.serial,
+                 ctx.rule.id,
+                 "critical",
+                 :normal,
+                 :trending
+               )
+
+      assert_receive {:notification_delivered, :outlook, _alert, _rendered}, 1_000
+      assert_receive {:notification_delivered, :teams, _alert, _rendered}, 1_000
+
+      assert :ignored =
+               Monitor.handle_evaluation(
+                 ctx.sensor.serial,
+                 ctx.rule.id,
+                 "critical",
+                 :trending,
+                 :normal
+               )
+
+      refute_receive {:notification_delivered, _channel, _alert, _rendered}, 200
+
+      # left open for a human to close, same as a breach clearing
+      reloaded = Incidents.get_incident!(advisory.id)
+      assert reloaded.status == "new"
     end
 
     test "a breach clearing does not auto-close the incident — a human does that", ctx do
       {:ok, incident} =
         Monitor.handle_evaluation(ctx.sensor.serial, ctx.rule.id, "critical", :normal, :breach)
+
+      assert_receive {:notification_delivered, :outlook, _alert, _rendered}, 1_000
+      assert_receive {:notification_delivered, :teams, _alert, _rendered}, 1_000
 
       assert :ignored =
                Monitor.handle_evaluation(
@@ -133,6 +268,8 @@ defmodule Ingestion.Incidents.MonitorTest do
                  :breach,
                  :normal
                )
+
+      refute_receive {:notification_delivered, _channel, _alert, _rendered}, 200
 
       reloaded = Incidents.get_incident!(incident.id)
       assert reloaded.status == "new"

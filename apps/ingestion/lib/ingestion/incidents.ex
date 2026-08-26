@@ -55,12 +55,21 @@ defmodule Ingestion.Incidents do
     |> Repo.one!()
   end
 
-  @doc "The currently-open incident for a sensor/rule pair, or nil."
-  @spec get_open_incident(integer(), integer()) :: Incident.t() | nil
-  def get_open_incident(sensor_id, rule_id) do
+  @doc """
+  The currently-open incident for a sensor/rule pair with the given
+  `trigger_status` (`"breach"` or `"trending"`), or nil.
+
+  `trigger_status` is required: a sensor/rule pair can have an open
+  advisory (`"trending"`) *and* an open breach at the same time — see
+  `Ingestion.Incidents.Incident`'s moduledoc — so "the" open incident is
+  only well-defined per trigger_status.
+  """
+  @spec get_open_incident(integer(), integer(), String.t()) :: Incident.t() | nil
+  def get_open_incident(sensor_id, rule_id, trigger_status) do
     from(i in Incident,
       where:
         i.sensor_id == ^sensor_id and i.rule_id == ^rule_id and
+          i.trigger_status == ^trigger_status and
           i.status in ^Incident.open_statuses(),
       preload: [:rule, sensor: :zone]
     )

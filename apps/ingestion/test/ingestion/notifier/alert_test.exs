@@ -32,7 +32,13 @@ defmodule Ingestion.Notifier.AlertTest do
         )
       )
 
-    insert_incident!(%{sensor: sensor, rule: rule, severity: rule.severity})
+    incident_attrs =
+      Map.merge(
+        %{sensor: sensor, rule: rule, severity: rule.severity},
+        Keyword.get(opts, :incident, %{})
+      )
+
+    insert_incident!(incident_attrs)
   end
 
   describe "content assembled from real records" do
@@ -122,6 +128,67 @@ defmodule Ingestion.Notifier.AlertTest do
 
       assert alert.subject =~ "CRITICAL"
       assert alert.subject =~ "Store7"
+    end
+  end
+
+  describe "advisory (:trending) alerts read as a developing trend, not a confirmed breach" do
+    defp build_advisory do
+      build_incident(incident: %{severity: "advisory", trigger_status: "trending"})
+    end
+
+    test "the subject says ADVISORY and does not claim the rule's severity" do
+      alert = build_advisory() |> Alert.build()
+
+      assert alert.subject =~ "ADVISORY"
+      assert alert.subject =~ "trending"
+      refute alert.subject =~ "CRITICAL"
+    end
+
+    test "carries an explicit developing-trend status line" do
+      text = build_advisory() |> Alert.build() |> Alert.to_text()
+
+      assert text =~ "Status: Developing trend"
+      assert text =~ "has not yet crossed"
+    end
+
+    test "still pulls expected_outcome and recommended_action from the same rule" do
+      text = build_advisory() |> Alert.build() |> Alert.to_text()
+
+      assert text =~ "Frozen stock begins to thaw"
+      assert text =~ "Check the chiller door seal"
+    end
+
+    test "still carries zone, commodity, condition, reading, duration and the deep link" do
+      incident = build_advisory()
+      alert = Alert.build(incident)
+      text = Alert.to_text(alert)
+
+      assert alert.zone == "Store7"
+      assert alert.commodity == "frozen_food"
+      assert text =~ "Store7"
+      assert text =~ "9.5"
+      assert text =~ "7m 0s"
+      assert text =~ "/incidents/#{incident.id}"
+    end
+
+    test "the Adaptive Card uses an informational accent colour, not the breach colour" do
+      card = build_advisory() |> Alert.build() |> Alert.to_adaptive_card()
+
+      color =
+        card["attachments"]
+        |> hd()
+        |> get_in(["content", "body"])
+        |> Enum.find(&(&1["type"] == "TextBlock"))
+        |> Map.fetch!("color")
+
+      assert color == "Accent"
+    end
+
+    test "a breach alert is unaffected — no Status line, still the plain severity subject" do
+      text = build_incident() |> Alert.build() |> Alert.to_text()
+
+      refute text =~ "Status: Developing trend"
+      refute text =~ "ADVISORY"
     end
   end
 

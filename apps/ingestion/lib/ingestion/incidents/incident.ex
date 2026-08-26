@@ -17,7 +17,16 @@ defmodule Ingestion.Incidents.Incident do
 
   `severity` is copied from the triggering rule at creation time rather
   than read live, so an incident's escalation window does not shift under
-  it if the rule is later versioned.
+  it if the rule is later versioned — **except** for a `:trending`
+  transition, which always opens the incident at the fixed `"advisory"`
+  severity regardless of the rule's own severity (see
+  `Ingestion.Incidents.Monitor`). `trigger_status` (`"breach"` or
+  `"trending"`) records which one raised it.
+
+  A sensor/rule pair can have at most one open incident *per
+  trigger_status* at a time (`incidents_one_open_per_sensor_rule_trigger`)
+  — so an open advisory does not block a subsequent breach from raising
+  its own incident, and vice versa.
   """
 
   use Ecto.Schema
@@ -71,8 +80,8 @@ defmodule Ingestion.Incidents.Incident do
     |> validate_inclusion(:status, @statuses)
     |> assoc_constraint(:sensor)
     |> assoc_constraint(:rule)
-    |> unique_constraint([:sensor_id, :rule_id],
-      name: :incidents_one_open_per_sensor_rule,
+    |> unique_constraint([:sensor_id, :rule_id, :trigger_status],
+      name: :incidents_one_open_per_sensor_rule_trigger,
       message: "already has an open incident"
     )
   end

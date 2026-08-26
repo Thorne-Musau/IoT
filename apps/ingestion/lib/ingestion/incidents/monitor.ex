@@ -13,19 +13,35 @@ defmodule Ingestion.Incidents.Monitor do
 
   ## What qualifies
 
-  Only a transition **into `:breach`** opens an incident. Specifically:
+  A transition **into `:breach`** opens a full incident, at the rule's own
+  severity. A transition **into `:trending`, from `:normal`,** opens an
+  *advisory* incident — same schema, same `Incidents`/`Notifier` pipeline,
+  just `severity: "advisory"` and `trigger_status: "trending"` instead of
+  the rule's severity and `"breach"`. Advisory incidents notify exactly
+  like breach incidents (see `Ingestion.Notifier.Alert`, which renders
+  them as a developing trend rather than a confirmed breach) and escalate
+  on the much longer `"advisory"` window (`config :ingestion, :escalation`
+  — 4 hours by default), never the breach-tier windows.
 
-    * `:trending` is a precursor warning, not a breach — it is not an
-      incident on its own. An incident is raised if and when the trend
-      actually crosses the FSQ-approved boundary.
+  Specifically:
+
+    * `:trending` only opens an incident on genuine entry from `:normal`.
+      A sustained trend re-broadcasting nothing (the sensor server only
+      broadcasts on a status *change*) never re-fires this; an advisory
+      that oscillates normal -> trending -> normal -> trending is
+      idempotent the same way a sustained breach is (see below).
+    * `:trending -> :normal` (the trend receding without ever breaching —
+      a false alarm) does **not** notify. It is logged for context and the
+      advisory incident, if still open, is left open for a human to close,
+      same as a breach clearing.
     * A transition **out of** `:breach` (the hysteresis clear) does not
-      close the incident automatically. A human closes incidents, after
-      recording what was actually done — the environmental condition
-      recovering is not the same as the food-safety event being resolved.
-      The clear is recorded in the log for context.
-    * A sustained breach re-broadcasting is idempotent: only one open
-      incident exists per (sensor, rule) pair, enforced by a partial unique
-      index, so duplicates cannot accumulate even under a race.
+      close the incident automatically, for the same reason. The clear is
+      recorded in the log for context.
+    * Re-broadcasting is idempotent **per trigger_status**: at most one
+      open incident exists per (sensor, rule, trigger_status), enforced by
+      a partial unique index — so an already-open advisory does not block
+      a subsequent breach on the same sensor/rule from opening its own
+      incident, and vice versa.
 
   Health events (`ingestion:health`) are deliberately **not** turned into
   incidents here. A silent sensor or an offline gateway is a device-health
@@ -74,17 +90,11 @@ defmodule Ingestion.Incidents.Monitor do
   def handle_evaluation(serial, rule_id, severity, prior, status)
 
   def handle_evaluation(serial, rule_id, severity, prior, :breach) when prior != :breach do
-    case Inventory.get_sensor_by_serial(serial) do
-      nil ->
-        Logger.warning(
-          "incident monitor: rule event for unknown sensor serial #{inspect(serial)} — ignoring"
-        )
+    with_sensor(serial, fn sensor -> open_incident(sensor, rule_id, severity, "breach") end)
+  end
 
-        {:error, :unknown_sensor}
-
-      sensor ->
-        open_incident(sensor, rule_id, severity)
-    end
+  def handle_evaluation(serial, rule_id, _severity, :normal, :trending) do
+    with_sensor(serial, fn sensor -> open_incident(sensor, rule_id, "advisory", "trending") end)
   end
 
   def handle_evaluation(serial, rule_id, _severity, :breach, cleared) do
@@ -97,9 +107,34 @@ defmodule Ingestion.Incidents.Monitor do
     :ignored
   end
 
+  def handle_evaluation(serial, rule_id, _severity, :trending, :normal) do
+    # The trend receded before ever crossing the boundary — a false alarm.
+    # No second notification; any open advisory is left for a human to close.
+    Logger.info(
+      "incident monitor: sensor #{serial} rule #{rule_id} trend cleared back to :normal " <>
+        "without breaching — no notification sent."
+    )
+
+    :ignored
+  end
+
   def handle_evaluation(_serial, _rule_id, _severity, _prior, _status), do: :ignored
 
-  defp open_incident(sensor, rule_id, severity) do
+  defp with_sensor(serial, fun) do
+    case Inventory.get_sensor_by_serial(serial) do
+      nil ->
+        Logger.warning(
+          "incident monitor: rule event for unknown sensor serial #{inspect(serial)} — ignoring"
+        )
+
+        {:error, :unknown_sensor}
+
+      sensor ->
+        fun.(sensor)
+    end
+  end
+
+  defp open_incident(sensor, rule_id, severity, trigger_status) do
     {reading_value, observed_duration} = snapshot_reading(sensor.serial)
 
     attrs = %{
@@ -107,7 +142,7 @@ defmodule Ingestion.Incidents.Monitor do
       rule_id: rule_id,
       severity: severity,
       status: "new",
-      trigger_status: "breach",
+      trigger_status: trigger_status,
       triggered_at: DateTime.utc_now() |> DateTime.truncate(:second),
       reading_value: reading_value,
       observed_duration_seconds: observed_duration
@@ -123,7 +158,8 @@ defmodule Ingestion.Incidents.Monitor do
 
       {:error, reason} ->
         Logger.error(
-          "incident monitor: failed to open incident for #{sensor.serial}/#{rule_id}: #{inspect(reason)}"
+          "incident monitor: failed to open #{trigger_status} incident for " <>
+            "#{sensor.serial}/#{rule_id}: #{inspect(reason)}"
         )
 
         {:error, reason}

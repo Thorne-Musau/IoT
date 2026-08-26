@@ -22,6 +22,14 @@ defmodule Ingestion.Notifier.Alert do
   `build/1` returns a channel-neutral struct; `Ingestion.Notifier.Local`,
   the Graph mail body and the Teams Adaptive Card all render from it, so
   the three channels cannot drift apart in what they say.
+
+  An incident whose `trigger_status` is `"trending"` (an advisory — a
+  developing trend, not yet a confirmed breach) goes through this exact
+  same pipeline. Its subject reads "ADVISORY: ..." instead of the severity,
+  and it carries one extra "Status" line framing it as a developing trend
+  — everything else (condition, reading, duration, expected outcome,
+  recommended action, link) is identical to a breach alert, still pulled
+  from the same rule and sensor/zone records.
   """
 
   alias Ingestion.Incidents.Incident
@@ -74,11 +82,18 @@ defmodule Ingestion.Notifier.Alert do
     expected_outcome = present(rule && rule.expected_outcome)
     recommended_action = present(rule && rule.recommended_action)
 
+    advisory? = incident.trigger_status == "trending"
+
     subject =
-      if escalation do
-        "ESCALATED (#{String.upcase(incident.severity)}): #{zone_name} — unacknowledged for #{duration_since_trigger(incident)}"
-      else
-        "#{String.upcase(incident.severity)}: #{zone_name} — #{condition_summary(condition)}"
+      cond do
+        escalation ->
+          "ESCALATED (#{String.upcase(incident.severity)}): #{zone_name} — unacknowledged for #{duration_since_trigger(incident)}"
+
+        advisory? ->
+          "ADVISORY: #{zone_name} — trending toward #{condition_summary(condition)}"
+
+        true ->
+          "#{String.upcase(incident.severity)}: #{zone_name} — #{condition_summary(condition)}"
       end
 
     lines =
@@ -92,6 +107,7 @@ defmodule Ingestion.Notifier.Alert do
         {"Expected outcome", expected_outcome || "not recorded on rule"},
         {"Recommended action", recommended_action || "not recorded on rule"}
       ]
+      |> maybe_prepend_advisory_status(advisory?)
       |> maybe_append_source(rule)
       |> maybe_append_escalation(escalation, incident)
 
@@ -244,6 +260,17 @@ defmodule Ingestion.Notifier.Alert do
   defp truncate(text, max) when byte_size(text) <= max, do: text
   defp truncate(text, max), do: String.slice(text, 0, max) <> "…"
 
+  # Advisories carry the same Condition/Expected outcome/Recommended action
+  # lines as a breach (all pulled from the same rule, unchanged) — this is
+  # the one extra line that frames it as a developing trend rather than a
+  # confirmed breach. Breach alerts are untouched: this only fires for
+  # trigger_status == "trending".
+  defp maybe_prepend_advisory_status(lines, false), do: lines
+
+  defp maybe_prepend_advisory_status(lines, true) do
+    [{"Status", "Developing trend — has not yet crossed the FSQ-approved boundary"} | lines]
+  end
+
   defp maybe_append_source(lines, rule) do
     case present(rule && rule.source_reference) do
       nil -> lines
@@ -275,6 +302,7 @@ defmodule Ingestion.Notifier.Alert do
 
   defp card_colour("critical"), do: "Attention"
   defp card_colour("high"), do: "Warning"
+  defp card_colour("advisory"), do: "Accent"
   defp card_colour(_), do: "Default"
 
   defp present(nil), do: nil
