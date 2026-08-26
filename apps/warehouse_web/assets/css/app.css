@@ -1,0 +1,227 @@
+/* See the Tailwind configuration guide for advanced usage
+   https://tailwindcss.com/docs/configuration */
+
+@import "tailwindcss" source(none);
+@import "phoenix-colocated/warehouse_web/colocated.css";
+@import "./fonts.css";
+@source "../css";
+@source "../js";
+@source "../../lib/warehouse_web";
+/* Required for Tailwind to automatically pick up changes in colocated CSS files in dev */
+@source "../../../../_build/dev/phoenix-colocated/warehouse_web/*/";
+
+/* A Tailwind plugin that makes "hero-#{ICON}" classes available.
+   The heroicons installation itself is managed by your mix.exs */
+@plugin "../vendor/heroicons";
+
+/* daisyUI Tailwind Plugin. */
+@plugin "daisyui/packages/bundle/daisyui" {
+  themes: false;
+}
+
+/* daisyUI theme plugin.
+  We ship with two themes, a light one inspired on Phoenix colors and a dark one inspired
+  on Elixir colors. Build your own at: https://daisyui.com/theme-generator/ */
+@plugin "daisyui/packages/bundle/daisyui-theme" {
+  name: "dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(30.33% 0.016 252.42);
+  --color-base-200: oklch(25.26% 0.014 253.1);
+  --color-base-300: oklch(20.15% 0.012 254.09);
+  --color-base-content: oklch(97.807% 0.029 256.847);
+  --color-primary: oklch(58% 0.233 277.117);
+  --color-primary-content: oklch(96% 0.018 272.314);
+  --color-secondary: oklch(58% 0.233 277.117);
+  --color-secondary-content: oklch(96% 0.018 272.314);
+  --color-accent: oklch(60% 0.25 292.717);
+  --color-accent-content: oklch(96% 0.016 293.756);
+  --color-neutral: oklch(37% 0.044 257.287);
+  --color-neutral-content: oklch(98% 0.003 247.858);
+  --color-info: oklch(58% 0.158 241.966);
+  --color-info-content: oklch(97% 0.013 236.62);
+  --color-success: oklch(60% 0.118 184.704);
+  --color-success-content: oklch(98% 0.014 180.72);
+  --color-warning: oklch(66% 0.179 58.318);
+  --color-warning-content: oklch(98% 0.022 95.277);
+  --color-error: oklch(58% 0.253 17.585);
+  --color-error-content: oklch(96% 0.015 12.422);
+  --radius-selector: 0.25rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.21875rem;
+  --size-field: 0.21875rem;
+  --border: 1.5px;
+  --depth: 1;
+  --noise: 0;
+}
+
+@plugin "daisyui/packages/bundle/daisyui-theme" {
+  name: "light";
+  default: true;
+  prefersdark: false;
+  color-scheme: "light";
+  /* base-100/200/300/content, primary, success, warning, error, and neutral
+     below are remapped to WFP Design System tokens (see the token block
+     further down this file and docs/design-tokens.md) so daisyUI-classed
+     chrome (btn-primary, alert-error, etc.) matches the rest of the app.
+     secondary/accent/info have no WFP-supplied equivalent and are left as
+     the Phoenix generator's original oklch values. */
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8;
+  --color-base-300: #e3e3e3;
+  --color-base-content: #000000e9;
+  --color-primary: #0078b8;
+  --color-primary-content: #ffffff;
+  --color-secondary: oklch(55% 0.027 264.364);
+  --color-secondary-content: oklch(98% 0.002 247.839);
+  --color-accent: oklch(0% 0 0);
+  --color-accent-content: oklch(100% 0 0);
+  --color-neutral: #545454;
+  --color-neutral-content: #ffffff;
+  --color-info: oklch(62% 0.214 259.815);
+  --color-info-content: oklch(97% 0.014 254.604);
+  --color-success: #008442;
+  --color-success-content: #ffffff;
+  --color-warning: #9d6700;
+  --color-warning-content: #ffffff;
+  --color-error: #e4052c;
+  --color-error-content: #ffffff;
+  --radius-selector: 0.25rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.21875rem;
+  --size-field: 0.21875rem;
+  --border: 1.5px;
+  --depth: 1;
+  --noise: 0;
+}
+
+/* ==========================================================================
+   WFP Design System — ported tokens
+   Source: designsystem.wfp.org/r/theme.json (light theme only)
+   Full inventory + intended use: docs/design-tokens.md
+   ========================================================================== */
+
+:root {
+  /* Raw WFP brand colours — reserved for logo/marketing use ONLY.
+     They are not contrast-optimized; never apply them to interactive
+     components or text. Use the semantic scales in @theme below instead. */
+  --wfp-blue: #007dbc;
+  --wfp-navy: #002f5a;
+  --wfp-green: #03924a;
+}
+
+@theme {
+  /* Primary (brand blue) scale */
+  --color-primary-50: #f4f9fc;
+  --color-primary-100: #e9f2fa;
+  --color-primary-200: #d3e6f5;
+  --color-primary-300: #aed1ec;
+  --color-primary-400: #7bb5df;
+  --color-primary-500: #3f94cc;
+  --color-primary-600: #0078b8;
+  --color-primary-700: #005795;
+  --color-primary-800: #003b6d;
+  --color-primary-900: #00274e;
+  --color-primary-950: #001632;
+
+  /* Success scale — Closed / resolved incidents */
+  --color-success-50: #f5faf6;
+  --color-success-100: #e8f4eb;
+  --color-success-200: #d2e9d7;
+  --color-success-300: #abd6b5;
+  --color-success-400: #7abe8a;
+  --color-success-500: #38a05b;
+  --color-success-600: #008442;
+  --color-success-700: #006147;
+  --color-success-800: #034332;
+  --color-success-900: #022d21;
+  --color-success-950: #011b12;
+
+  /* Warning scale — elevated / trending-toward-breach states */
+  --color-warning-50: #fff8e7;
+  --color-warning-100: #fff0cf;
+  --color-warning-200: #fee09c;
+  --color-warning-300: #fcc524;
+  --color-warning-400: #dea600;
+  --color-warning-500: #ba8300;
+  --color-warning-600: #9d6700;
+  --color-warning-700: #7d4800;
+  --color-warning-800: #602c00;
+  --color-warning-900: #4a1500;
+  --color-warning-950: #370100;
+
+  /* Danger scale — Critical incidents */
+  --color-danger-50: #fff7f6;
+  --color-danger-100: #ffedeb;
+  --color-danger-200: #ffdad6;
+  --color-danger-300: #ffbbb5;
+  --color-danger-400: #ff8f89;
+  --color-danger-500: #ff4b4f;
+  --color-danger-600: #e4052c;
+  --color-danger-700: #ad000c;
+  --color-danger-800: #7c0001;
+  --color-danger-900: #560000;
+  --color-danger-950: #370000;
+
+  /* Neutral scale — chrome, borders, muted text */
+  --color-neutral-50: #f8f8f8;
+  --color-neutral-100: #f1f1f1;
+  --color-neutral-200: #e3e3e3;
+  --color-neutral-300: #cccccc;
+  --color-neutral-400: #aeaeae;
+  --color-neutral-500: #8d8d8d;
+  --color-neutral-600: #727272;
+  --color-neutral-700: #545454;
+  --color-neutral-800: #3a3a3a;
+  --color-neutral-900: #262626;
+  --color-neutral-950: #161616;
+
+  /* Semantic aliases (WFP theme.json root tokens) */
+  --color-background: #ffffff;
+  --color-foreground: #000000e9;
+  --color-muted: #f8f8f8;
+  --color-muted-foreground: #0000008d;
+  --color-border: #0000001c;
+  --color-input: #8d8d8d;
+  --color-ring: #0078b8;
+  --color-card: #ffffff;
+  --color-card-foreground: #000000e9;
+  --color-primary: #0078b8;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #e9f2fa;
+  --color-secondary-foreground: #005795;
+  --color-destructive: #e4052c;
+
+  /* Corner radius scale */
+  --radius-xs: 0.125rem;
+  --radius-sm: 0.1875rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 1rem;
+  --radius-4xl: 1.5rem;
+
+  /* Typography — self-hosted, see fonts.css */
+  --font-sans: "Open Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* Add variants based on LiveView classes */
+@custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
+@custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
+@custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
+
+/* Use the data attribute for dark mode  */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* Make LiveView wrapper divs transparent for layout */
+[data-phx-session], [data-phx-teleported-src] { display: contents }
+
+/* This file is for your main application CSS */

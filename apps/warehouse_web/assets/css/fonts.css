@@ -1,0 +1,47 @@
+/* Open Sans — self-hosted (not Google Fonts CDN) for offline reliability.
+   Weights: 400 (regular), 500 (medium), 600 (semibold), 700 (bold).
+
+   PLACEHOLDER — the four WOFF2 files referenced below have not been added
+   to this environment (no external network access here). Before shipping,
+   add these files:
+
+     apps/warehouse_web/priv/static/fonts/open-sans-400.woff2
+     apps/warehouse_web/priv/static/fonts/open-sans-500.woff2
+     apps/warehouse_web/priv/static/fonts/open-sans-600.woff2
+     apps/warehouse_web/priv/static/fonts/open-sans-700.woff2
+
+   Until then, the browser silently falls back to the ui-sans-serif/system-ui
+   stack declared alongside "Open Sans" in --font-sans (see app.css) — no
+   build or render errors occur in the meantime. */
+
+@font-face {
+  font-family: "Open Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/open-sans-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Open Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/open-sans-500.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Open Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/open-sans-600.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Open Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/open-sans-700.woff2") format("woff2");
+}
